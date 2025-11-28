@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+  <meta charset="utf-8">
+  <title>IN-SMART Q&A Chatbot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Noto Sans CJK TC", "Microsoft JhengHei", "PingFang TC",
+                   Helvetica, Arial, sans-serif;
+      background: #e5ddd5;
+      display: flex;
+      justify-content: center;
+      padding: 8px;
+      overflow-y: auto;
+    }
+    .app {
+      width: 100%;
+      max-width: 900px;
+      background: #f0f2f5;
+      border-radius: 24px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+      display: flex;
+      flex-direction: column;
+      max-height: 95vh;
+    }
+    .header {
+      height: 56px;
+      background: #075e54;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .header-title { font-size: 15px; font-weight: 600; }
+    .header-sub { font-size: 11px; opacity: 0.85; }
+    .header-right { font-size: 11px; opacity: 0.9; }
+
+    .chat-bg {
+      flex: 1;
+      position: relative;
+      background-color: #efeae2;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    #chat {
+      flex: 1;
+      padding: 10px 12px;
+      overflow-y: auto;
+      min-height: 0;
+      max-height: calc(95vh - 56px - 70px - 70px);
+    }
+    #chat::-webkit-scrollbar { width: 6px; }
+    #chat::-webkit-scrollbar-thumb {
+      background: rgba(0,0,0,0.25);
+      border-radius: 3px;
+    }
+    .msg-row { display: flex; margin-bottom: 6px; }
+    .msg-row.user { justify-content: flex-end; }
+    .msg-row.bot { justify-content: flex-start; }
+    .msg-bubble {
+      max-width: 70%;
+      padding: 6px 8px;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.4;
+      word-break: break-word;
+      white-space: pre-wrap;
+      position: relative;
+      background: #ffffff;
+      color: #111;
+    }
+    .msg-row.user .msg-bubble {
+      background: #25d366;
+      color: #fff;
+      border-bottom-right-radius: 2px;
+    }
+    .msg-row.bot .msg-bubble {
+      background: #ffffff;
+      color: #111;
+      border-bottom-left-radius: 2px;
+    }
+    .msg-time {
+      margin-top: 2px;
+      font-size: 10px;
+      opacity: 0.7;
+      text-align: right;
+    }
+    .msg-row.user .msg-time { color: #e0ffe6; }
+    .msg-row.bot .msg-time { color: #6b7280; }
+
+    .typing-dots { display: inline-flex; gap: 3px; }
+    .typing-dot {
+      width: 4px; height: 4px;
+      border-radius: 999px;
+      background: #999;
+      animation: typing 1s infinite ease-in-out;
+    }
+    .typing-dot:nth-child(2) { animation-delay: 0.15s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes typing {
+      0%, 100% { transform: translateY(0); opacity: 0.4; }
+      50%      { transform: translateY(-1px); opacity: 1; }
+    }
+    .empty-tip {
+      text-align: center;
+      font-size: 12px;
+      color: #666;
+      margin-top: 16px;
+      margin-bottom: 12px;
+      line-height: 1.5;
+    }
+
+    /* === 首屏建議問題 === */
+    .suggestions {
+      padding: 0 4px 8px 4px;
+    }
+    .suggestion-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #ffffff;
+      border-radius: 999px;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      cursor: pointer;
+      border: 1px solid #e0e0e0;
+      transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+      font-size: 12px;
+    }
+    .suggestion-item span.text {
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding-right: 8px;
+    }
+    .suggestion-item span.arrow {
+      flex-shrink: 0;
+      font-weight: bold;
+      color: #777;
+      font-size: 12px;
+    }
+    .suggestion-item:hover {
+      background: #f0f4ff;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      transform: translateY(-1px);
+    }
+
+    /* === 回覆後的追問建議 === */
+    .followups {
+      margin-top: 4px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .followup-btn {
+      border-radius: 999px;
+      border: 1px solid #e0e0e0;
+      background: #f9fafb;
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      color: #374151;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .followup-btn:hover {
+      background: #e5f0ff;
+      border-color: #bfdbfe;
+    }
+    .followup-arrow {
+      font-size: 11px;
+      color: #6b7280;
+    }
+
+    .input-area {
+      background: #f0f2f5;
+      padding: 6px 8px;
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      border-top: 1px solid #d1d5db;
+      flex-shrink: 0;
+    }
+    .input-wrap {
+      flex: 1;
+      background: #ffffff;
+      border-radius: 20px;
+      border: 1px solid #cbd5e1;
+      display: flex;
+      align-items: center;
+      padding: 4px 10px;
+    }
+    #message {
+      flex: 1;
+      border: none;
+      outline: none;
+      resize: none;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   "Noto Sans CJK TC", "Microsoft JhengHei", "PingFang TC",
+                   Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      max-height: 80px;
+      padding: 4px 0;
+      background: transparent;
+      color: #111827;
+    }
+    #message::placeholder { color: #9ca3af; }
+
+    .hint {
+      font-size: 10px;
+      color: #9ca3af;
+      margin: 2px 0 6px 14px;
+    }
+    .send-btn {
+      background: #0084ff;
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+    }
+    .send-btn:disabled {
+      opacity: 0.5;
+      box-shadow: none;
+      cursor: default;
+    }
+    .send-icon { font-size: 11px; }
+
+    @media (max-width: 600px) {
+      body { padding: 0; }
+      .app { border-radius: 0; max-height: 100vh; }
+      #chat { max-height: calc(100vh - 56px - 70px - 70px); }
+      .msg-bubble { max-width: 80%; }
+      .suggestion-item {
+        font-size: 11px;
+        padding: 7px 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="header">
+      <div>
+        <div class="header-title">IN-SMART Q&A Bot</div>
+        <div class="header-sub">
+          Ask about IN-SMART (中文 or English): support goals, activities, STEAM, SDL, AI, etc.
+        </div>
+      </div>
+      <div class="header-right">Online</div>
+    </div>
+
+    <div class="chat-bg">
+      <div id="chat">
+        <div class="empty-tip">
+          Welcome to the IN-SMART Q&A bot.<br/>
+          本聊天機械人只處理與「IN-SMART 培育STEAM及人工智能人才的創新網絡計劃」相關的查詢。
+        </div>
+
+        <!-- 首屏建議問題 -->
+        <div class="suggestions">
+          <div class="suggestion-item" data-question="介紹IN-SMART計劃。">
+            <span class="text">介紹IN-SMART計劃。</span>
+            <span class="arrow">➤</span>
+          </div>
+          <div class="suggestion-item" data-question="IN-SMART有哪些計劃學校？">
+            <span class="text">IN-SMART有哪些計劃學校？</span>
+            <span class="arrow">➤</span>
+          </div>
+          <div class="suggestion-item" data-question="IN-SMART最近有甚麼活動？">
+            <span class="text">IN-SMART最近有甚麼活動？</span>
+            <span class="arrow">➤</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <div class="input-wrap">
+          <textarea id="message"
+                    rows="1"
+                    placeholder="Type your question in Chinese or English..."></textarea>
+        </div>
+        <button id="sendBtn" class="send-btn" onclick="sendMessage()">
+          <span class="send-icon">➤</span>
+          <span>Send</span>
+        </button>
+      </div>
+      <div class="hint">Press Enter to send · Shift + Enter for new line</div>
+    </div>
+  </div>
+
+  <script>
+    let history = [];
+    let sending = false;
+    const chat = document.getElementById('chat');
+    const input = document.getElementById('message');
+    const sendBtn = document.getElementById('sendBtn');
+
+    function scrollBottom() {
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function removeEmptyTip() {
+      const tip = chat.querySelector('.empty-tip');
+      if (tip) tip.remove();
+    }
+
+    function removeSuggestions() {
+      const sugg = chat.querySelector('.suggestions');
+      if (sugg) sugg.remove();
+    }
+
+    // 在 bot 回覆的 bubble 下方加一組追問建議按鈕（使用後端回傳的 followups）
+    function attachFollowups(bubbleEl, followups) {
+      if (!Array.isArray(followups) || followups.length === 0) return;
+
+      const wrap = document.createElement('div');
+      wrap.className = 'followups';
+
+      followups.forEach(q => {
+        if (!q || typeof q !== 'string') return;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'followup-btn';
+        btn.title = q;
+        btn.innerHTML = `<span class="followup-text">${q}</span><span class="followup-arrow">➤</span>`;
+        btn.addEventListener('click', () => {
+          sendMessage(q);
+        });
+        wrap.appendChild(btn);
+      });
+
+      if (wrap.childElementCount > 0) {
+        bubbleEl.appendChild(wrap);
+      }
+    }
+
+    function addMessage(role, text, isTyping=false) {
+      removeEmptyTip();
+
+      const row = document.createElement('div');
+      row.className = 'msg-row ' + (role === 'user' ? 'user' : 'bot');
+
+      const bubble = document.createElement('div');
+      bubble.className = 'msg-bubble';
+
+      if (isTyping) {
+        const dots = document.createElement('div');
+        dots.className = 'typing-dots';
+        for (let i = 0; i < 3; i++) {
+          const d = document.createElement('div');
+          d.className = 'typing-dot';
+          dots.appendChild(d);
+        }
+        bubble.appendChild(dots);
+      } else {
+        bubble.textContent = text;
+      }
+
+      const time = document.createElement('div');
+      time.className = 'msg-time';
+      const now = new Date();
+      time.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      bubble.appendChild(time);
+      row.appendChild(bubble);
+      chat.appendChild(row);
+      scrollBottom();
+      return { row, bubble };
+    }
+
+    function disableInputFor(ms) {
+      input.disabled = true;
+      sendBtn.disabled = true;
+      setTimeout(() => {
+        input.disabled = false;
+        sendBtn.disabled = false;
+      }, ms);
+    }
+
+    async function sendMessage(messageFromSuggestion = null) {
+      if (sending) return;
+
+      const text = messageFromSuggestion !== null
+        ? messageFromSuggestion
+        : input.value.trim();
+
+      if (!text) return;
+
+      // 用戶一旦發出第一個問題，就把首屏建議問題移走
+      removeSuggestions();
+
+      addMessage('user', text);
+      input.value = '';
+      autoResize();
+
+      const typing = addMessage('bot', '', true);
+      const typingRow = typing.row;
+
+      sending = true;
+      sendBtn.disabled = true;
+
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: text, history: history })
+        });
+        const data = await res.json();
+
+        typingRow.remove();
+
+        if (!res.ok || data.error) {
+          // Rate limit 特別處理
+          if (data.error === 'rate_limit') {
+            const wait = data.retry_after || 10;
+            addMessage('bot', (data.message || '系統請求過於頻密，請稍後再試。') +
+              `（建議等待約 ${wait} 秒。）`);
+            disableInputFor(wait * 1000);
+          } else {
+            addMessage('bot', data.message || '系統暫時無法回應，請稍後再試。');
+          }
+        } else {
+          history = data.history || [];
+          const botReply = data.reply || '';
+          const followups = data.followups || [];
+
+          const { bubble } = addMessage('bot', botReply);
+
+          // 直接使用後端提供的 tailor-made followups
+          attachFollowups(bubble, followups);
+        }
+      } catch (e) {
+        typingRow.remove();
+        addMessage('bot', 'Network error: ' + e);
+      } finally {
+        sending = false;
+        if (!input.disabled) {
+          sendBtn.disabled = false;
+        }
+      }
+    }
+
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    function autoResize() {
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 80) + 'px';
+    }
+    input.addEventListener('input', autoResize);
+
+    // 首屏建議問題點擊
+    document.querySelectorAll('.suggestion-item').forEach((el) => {
+      el.addEventListener('click', () => {
+        const q = el.getAttribute('data-question') || '';
+        sendMessage(q);
+      });
+    });
+  </script>
+</body>
+</html>

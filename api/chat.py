@@ -6,14 +6,22 @@ import re
 
 app = Flask(__name__, template_folder="../templates")
 
+# 1. API key from environment variable
 HKU_API_KEY = os.getenv("HKU_API_KEY")
-DEPLOYMENT_ID = "gpt-4.1-nano"
+
+# 2. Deployment name (must match HKU OpenAI deployment)
+DEPLOYMENT_ID = "gpt-4.1-nano"  # TODO: set to actual deployment name
+
+# 3. HKU OpenAI endpoint
 API_VERSION = "2025-01-01-preview"
 ENDPOINT = (
     f"https://api.hku.hk/openai/deployments/"
     f"{DEPLOYMENT_ID}/chat/completions?api-version={API_VERSION}"
 )
+
+# 4. IN‑SMART official homepage (for reference only)
 INSMART_HOME = "https://insmart.cite.hku.hk/"
+
 
 INSMART_SUMMARY_ZH = """
 IN-SMART（「培育STEAM及人工智能人才的創新網絡計劃」）的主要支援目標包括：

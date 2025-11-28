@@ -26,160 +26,75 @@ ENDPOINT = (
     f"{DEPLOYMENT_ID}/chat/completions?api-version={API_VERSION}"
 )
 
-# 4. IN‑SMART official homepage (crawler entry point)
+# 4. IN‑SMART official homepage (for reference only)
 INSMART_HOME = "https://insmart.cite.hku.hk/"
 
-# Global state populated at startup
-insmart_corpus = ""
+# ============================================================
+#  固定版 IN‑SMART 官網摘要（以你給的主頁內容整理）
+# ============================================================
+
+INSMART_SUMMARY_ZH = """
+IN-SMART（「培育STEAM及人工智能人才的創新網絡計劃」）的主要支援目標包括：
+1. 透過培育「培訓團隊模式」，並著重培育課程領導人才，提升學校課程領導能力和教師團隊專業水平；
+2. 提升教師設計 STEAM 學習設計的能力，以促進學生自主學習，特別是把人工智能學習元素融入 STEAM 教學活動；
+3. 制定培養教師人工智能素養的專業發展框架，並就提升教師人工智能素養和教學能力所需的有利學習條件和環境提出建議；
+4. 提升教師透過 STEAM 教育發展學生數碼素養的能力；
+5. 發展學校設計和協調多層級連繫學習的能力，以促進學校的教育創新。
+
+網站亦提供：
+- 「支援重點」、「支援活動及模式」、「概念框架」、「項目框架」及「自主學習」、「STEAM 教育」、「SDL-STEAM 的學習設計」等內容；
+- 2025-26 參與學校名單；
+- 會議、工作坊及培訓班等活動資訊；
+- 相關資源及同意通知書（2025-2026 學年）等文件。
+
+聯絡資料：
+- 聯絡人：陳敏柔女士（計劃助理）
+- 電話：3917 0744
+- 電郵：yoyocmi@hku.hk
+
+研究操守：
+- 本計劃獲香港大學非臨床研究操守委員會批准，參考編號：EA250499。
+"""
+
+INSMART_SUMMARY_EN = """
+IN-SMART (Innovative Network for STEAM and AI Talent) is a support project hosted by
+The University of Hong Kong. Based on the official website, the key support goals are:
+
+1. To strengthen schools’ curriculum leadership capacity and teachers’ professional competence
+   through a training-team model that emphasises curriculum leaders;
+2. To enhance teachers’ ability to design STEAM learning activities that foster students’
+   self-directed learning, especially by integrating AI learning elements into STEAM teaching;
+3. To develop a professional development framework for teachers’ AI literacy and to propose
+   enabling conditions and environments for enhancing teachers’ AI literacy and teaching capacity;
+4. To enhance teachers’ capability to develop students’ digital literacy through STEAM education;
+5. To develop schools’ capacity to design and coordinate multi-level, connected learning in order
+   to promote educational innovation.
+
+The website also provides:
+- Key support foci, support activities and modes, conceptual and project frameworks;
+- Information about self-directed learning, STEAM education, and SDL–STEAM learning design;
+- A list of participating schools (e.g., for 2025–26);
+- Information about conferences, workshops and training courses;
+- Resources and the consent form for the 2025–2026 school year.
+
+Contact:
+- Contact person: Ms. Chan Man Yau (Project Assistant)
+- Tel: (+852) 3917 0744
+- Email: yoyocmi@hku.hk
+
+Research ethics:
+- The project has been approved by the HKU non-clinical research ethics committee,
+  reference number EA250499.
+"""
+
+# 若將來真的需要 crawler，可再開啟；目前為了部署穩定先停用。
+insmart_corpus = INSMART_SUMMARY_ZH + "\n\n" + INSMART_SUMMARY_EN
 crawler_error = None
 
 
 # ============================================================
-#  Utilities: fetch and clean HTML
-# ============================================================
-
-def fetch_html(url: str, timeout: int = 15) -> tuple[str, str]:
-    """
-    Send a GET request to the given URL and return:
-      - response text
-      - Content-Type header value
-    """
-    headers = {
-      "User-Agent": "INSMART-QA-Bot/1.0 (+HKU)"
-    }
-    resp = requests.get(url, timeout=timeout, headers=headers)
-    resp.raise_for_status()
-    return resp.text, resp.headers.get("Content-Type", "")
-
-
-def html_to_text(html: str, max_chars: int = 5000) -> str:
-    """
-    Convert HTML to plain text:
-      - remove script/style/noscript
-      - strip each line and drop empty lines
-      - truncate to max_chars
-    """
-    soup = BeautifulSoup(html, "html.parser")
-
-    for tag in soup(["script", "style", "noscript"]):
-        tag.decompose()
-
-    text = soup.get_text(separator="\n")
-    lines = [line.strip() for line in text.splitlines()]
-    lines = [line for line in lines if line]
-    text = "\n".join(lines)
-
-    if len(text) > max_chars:
-        text = text[:max_chars] + "\n...[content truncated]"
-
-    return text
-
-
-# ============================================================
-#  Crawler: fetch up to 50 pages from the IN‑SMART site
-# ============================================================
-
-def crawl_insmart(
-    start_url: str = INSMART_HOME,
-    max_pages: int = 50,
-    per_page_chars: int = 5000,
-    total_chars: int = 30000,
-) -> str:
-    """
-    Breadth‑first crawl starting from INSMART_HOME.
-
-    Rules:
-      - only follow links within the same domain
-      - visit at most max_pages pages
-      - extract at most per_page_chars characters per page
-      - overall corpus is capped at total_chars characters
-    """
-    parsed = urlparse(start_url)
-    base_domain = parsed.netloc
-    base_scheme = parsed.scheme
-
-    if base_scheme not in ("http", "https") or not base_domain:
-        raise ValueError(f"Invalid start URL: {start_url}")
-
-    visited: set[str] = set()
-    queue: deque[str] = deque([start_url])
-    collected: list[str] = []
-
-    while queue and len(visited) < max_pages and len("".join(collected)) < total_chars:
-        url = queue.popleft()
-        if url in visited:
-            continue
-        visited.add(url)
-
-        try:
-            html, ctype = fetch_html(url)
-        except Exception as e:
-            collected.append(f"\n[Failed to fetch {url}: {e}]\n")
-            continue
-
-        # Non‑HTML content (e.g. PDF) – treat as plain text
-        if "text/html" not in ctype:
-            text = html
-            if len(text) > per_page_chars:
-                text = text[:per_page_chars] + "\n...[content truncated]"
-            collected.append(f"\n[Content of {url}]\n{text}\n")
-            continue
-
-        # HTML → plain text
-        page_text = html_to_text(html, max_chars=per_page_chars)
-        collected.append(f"\n[Content of {url}]\n{page_text}\n")
-
-        # Discover further links within the same domain (BFS)
-        soup = BeautifulSoup(html, "html.parser")
-        for a in soup.find_all("a", href=True):
-            href = a["href"].strip()
-            full_url = urljoin(url, href)
-            p = urlparse(full_url)
-
-            if p.netloc == base_domain and p.scheme in ("http", "https"):
-                if full_url not in visited:
-                    queue.append(full_url)
-
-        if len("".join(collected)) >= total_chars:
-            break
-
-    corpus = "".join(collected)
-    if len(corpus) > total_chars:
-        corpus = corpus[:total_chars] + "\n...[overall corpus truncated]"
-
-    return corpus
-
-
-def load_insmart_corpus() -> None:
-    """
-    Called once at app startup.
-
-    Responsibilities:
-      - run the crawler
-      - populate global insmart_corpus
-      - record any error message in crawler_error
-    """
-    global insmart_corpus, crawler_error
-    try:
-        print("[INSMART] Crawling up to 50 pages from:", INSMART_HOME)
-        corpus = crawl_insmart(
-            start_url=INSMART_HOME,
-            max_pages=50,
-            per_page_chars=5000,
-            total_chars=30000,
-        )
-        insmart_corpus = corpus
-        crawler_error = None
-        print("[INSMART] Crawl finished. Length:", len(corpus))
-    except Exception as e:
-        crawler_error = str(e)
-        insmart_corpus = ""
-        print("[INSMART] Crawl failed:", e)
-
-
-# ============================================================
 #  Chat API: front‑end posts to /api/chat, back‑end calls HKU OpenAI
-#  Now returns: reply + followups + history
+#  Returns: reply + followups + history
 # ============================================================
 
 @app.route("/api/chat", methods=["POST"])
@@ -207,30 +122,8 @@ def chat():
     if not user_message:
         return jsonify({"error": "message is required"}), 400
 
-    # Build the system prompt: role description + crawled IN‑SMART content
-    if crawler_error:
-        crawl_note = f"[Note: error occurred while crawling IN-SMART at startup: {crawler_error}]"
-    else:
-        crawl_note = (
-            "Below is content automatically retrieved at startup from the "
-            "IN-SMART official website (up to 50 pages, Chinese and English, "
-            "possibly truncated):"
-        )
-
     # Chinese summary of IN‑SMART, based on the official site
-    insmart_summary_zh = """
-IN-SMART（「培育STEAM及人工智能人才的創新網絡計劃」）的支援目標包括：
-1. 透過培育培訓團隊模式，並著重培育課程領導人才，提升學校課程領導能力和教師團隊專業水平；
-2. 提升教師設計STEAM學習設計，以促進學生自主學習的能力，特別是將人工智能學習元素融入STEAM教學活動；
-3. 制定培養教師人工智能素養的專業發展框架，並就提高教師人工智能素養和教學能力所需的有利學習條件和環境提出建議；
-4. 提升教師通過STEAM教育，發展學生數碼素養的能力；
-5. 發展學校設計和協調多層級連繫學習的能力，以促進學校的教育創新。
-
-聯絡：
-- 聯絡人：陳敏柔女士（計劃助理）
-- 電話：3917 0744
-- 電郵：yoyocmi@hku.hk
-"""
+    insmart_summary_zh = INSMART_SUMMARY_ZH
 
     # System prompt that forces JSON (reply + followups) and language consistency
     system_prompt = f"""
@@ -244,24 +137,17 @@ LANGUAGE:
 - Whatever language you use in "reply", you MUST use the SAME language in ALL items of "followups".
 
 ABOUT IN-SMART (EN SUMMARY):
-- Chinese name: 「IN-SMART 培育STEAM及人工智能人才的創新網絡計劃」
-- Main goals:
-  1. Strengthen curriculum leadership and teachers’ professional capacity through a training‑team model;
-  2. Enhance teachers’ ability to design STEAM learning tasks that foster students’ self-directed learning,
-     especially integrating AI elements;
-  3. Develop a professional development framework for teachers’ AI literacy and suggest enabling
-     conditions and environments;
-  4. Enhance teachers’ ability to develop students’ digital literacy through STEAM education;
-  5. Support schools to design and coordinate multi-level connected learning to promote educational innovation.
+{INSMART_SUMMARY_EN}
 
 ABOUT IN-SMART (ZH SUMMARY):
 {insmart_summary_zh}
 
-{crawl_note}
+Below is a consolidated text summary derived from the official homepage {INSMART_HOME}.
+You may treat it as part of the authoritative project description:
 
-================ IN-SMART CRAWLED CONTENT (UP TO 50 PAGES) START ================
-{insmart_corpus if insmart_corpus else "[No crawled content available at the moment]"}
-================ IN-SMART CRAWLED CONTENT (UP TO 50 PAGES) END ==================
+================ IN-SMART CONSOLIDATED CONTENT START ================
+{insmart_corpus}
+================ IN-SMART CONSOLIDATED CONTENT END ==================
 
 You must strictly follow these rules:
 
@@ -273,14 +159,14 @@ You must strictly follow these rules:
      enquiries and cannot answer that question.
 
 2. CONTENT SOURCE
-   - Base your answers primarily on the IN-SMART website content above.
+   - Base your answers primarily on the IN-SMART information above.
    - If the user asks something NOT clearly covered, you may give general educational advice,
      BUT explicitly state that it is general advice and remind the user to check the latest
      official information on: {INSMART_HOME}
    - NEVER fabricate concrete factual details such as:
        * exact list of participating schools,
        * specific dates, quotas, or fees,
-     unless they are clearly present in the crawled content.
+     unless they are clearly present in the provided content.
 
 3. STYLE
    - Be concise, structured and helpful; use bullet points when useful.
@@ -324,7 +210,7 @@ You must strictly follow these rules:
     body = {
         "messages": messages,
         "model": DEPLOYMENT_ID,
-        "temperature": 0.5,   # slightly higher for more varied followups
+        "temperature": 0.5,
         "max_tokens": 800,
     }
 
@@ -334,7 +220,6 @@ You must strictly follow these rules:
         return jsonify({"error": f"request failed: {e}"}), 500
 
     if resp.status_code != 200:
-        # You can refine 429 handling here if needed
         return jsonify({
             "error": "upstream_error",
             "status": resp.status_code,
@@ -377,22 +262,18 @@ You must strictly follow these rules:
     if not reply_text:
         reply_text = raw_content
 
-    # 4) If followups are empty, create a language‑aware fallback set,
-    #    written from the USER's "I" perspective (so each button looks like
-    #    a natural question the user might ask next).
+    # 4) If followups are empty, create a language‑aware fallback set
     if not followups:
         import re
         has_cjk = re.search(r"[\u4e00-\u9fff]", reply_text) is not None
 
         if has_cjk:
-            # Traditional Chinese, user-perspective questions
             followups = [
                 "我還可以進一步了解哪些有關 IN-SMART 支援目標或活動的資訊？",
                 "我可以如何善用 IN-SMART 提供的教師培訓或 STEAM／AI 教學設計支援？",
                 "如果我之後有問題或想參加計劃，我可以用甚麼方式聯絡 IN-SMART 團隊？"
             ]
         else:
-            # English, user-perspective questions
             followups = [
                 "What else can I learn about IN-SMART’s support goals or activities?",
                 "How can I make use of IN-SMART’s support for teacher training or STEAM/AI learning design?",
@@ -428,6 +309,5 @@ def index():
 
 
 if __name__ == "__main__":
-    # Pre‑load IN‑SMART website content at startup for later Q&A
-    load_insmart_corpus()
+    # 不再啟動 crawler，啟動時只用固定摘要即可
     app.run(host="0.0.0.0", port=5000, debug=True)
